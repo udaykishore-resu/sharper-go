@@ -7,6 +7,7 @@ import (
 )
 
 func TestDispatch(t *testing.T) {
+	t.Setenv("LEDGERCTL_TOKEN", "tok-from-env")
 	if err := dispatch(t.Context(), []string{"replay", "-dry-run=false", "f.ndjson"}); err != nil {
 		t.Fatal(err)
 	}

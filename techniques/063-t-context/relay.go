@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// stuck is a test seam: the review test sets it to simulate a
+// relay whose shutdown path is broken and never returns.
+var stuck bool
+
 type Relay struct {
 	done  chan struct{}
 	ticks int
@@ -22,6 +26,9 @@ func Start(ctx context.Context) *Relay {
 		for {
 			select {
 			case <-ctx.Done():
+				if stuck {
+					select {} // the bug: ignores cancellation
+				}
 				return
 			case <-t.C:
 				r.ticks++ // publish a batch here

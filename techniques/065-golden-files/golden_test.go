@@ -17,8 +17,13 @@ func golden(t *testing.T, got []byte) {
 	path := filepath.Join("testdata",
 		t.Name()+".golden")
 	if *update {
-		os.MkdirAll(filepath.Dir(path), 0o755)
-		err := os.WriteFile(path, got, 0o644)
+		if os.Getenv("CI") != "" {
+			t.Fatal("-update is not allowed in CI")
+		}
+		err := os.MkdirAll(filepath.Dir(path), 0o755)
+		if err == nil {
+			err = os.WriteFile(path, got, 0o644)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

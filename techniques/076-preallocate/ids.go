@@ -24,3 +24,7 @@ func Touched(ts []Transfer) map[string]int {
 	}
 	return m
 }
+
+// sizeHint clamps a client-supplied count before it sizes memory:
+// min alone lets a negative count through, and make panics on it.
+func sizeHint(n int) int { return max(0, min(n, 1000)) }

@@ -2,6 +2,8 @@ package ledger
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -31,7 +33,10 @@ func TestValidate(t *testing.T) {
 			tr := ok
 			tc.edit(&tr)
 			err := tr.Validate()
-			if !errors.Is(err, tc.want) {
+			switch {
+			case tc.want == nil && err != nil:
+				t.Errorf("%+v: unexpected %v", tr, err)
+			case !errors.Is(err, tc.want):
 				t.Errorf("%+v.Validate() = %v, want %v",
 					tr, err, tc.want)
 			}
@@ -88,9 +93,13 @@ func TestParseAmount(t *testing.T) {
 	}
 }
 
-// FuzzParseAmount is Technique 67's round-trip target.
+// FuzzParseAmount is Technique 67's target: the whole-part rule
+// (independent of the parser) plus the round trip. The seeds add
+// the boundaries and invalid UTF-8 the book asks for.
 func FuzzParseAmount(f *testing.F) {
-	for _, s := range []string{"0", "12.34", "-3"} {
+	for _, s := range []string{"0", "12.34", "-3", "1.-5",
+		"\xff1.00", "0.00", "007.5", "1.",
+		"92233720368547757.99", "92233720368547758.00"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
@@ -98,8 +107,10 @@ func FuzzParseAmount(f *testing.F) {
 		if err != nil {
 			return // rejecting input is fine
 		}
-		if cents < 0 {
-			t.Fatalf("%q -> negative %d", s, cents)
+		whole, _, _ := strings.Cut(s, ".")
+		w, _ := strconv.ParseInt(whole, 10, 64)
+		if cents < 0 || cents/100 != w {
+			t.Fatalf("%q -> %d cents", s, cents)
 		}
 		back := FormatAmount(cents)
 		again, err := ParseAmount(back)

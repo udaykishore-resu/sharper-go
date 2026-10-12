@@ -59,3 +59,33 @@ func TestFirstCallerLeaves(t *testing.T) {
 		t.Fatalf("second caller got %v: the shared query died", err)
 	}
 }
+
+// After a transfer commits, Forget on the account ID: the next
+// reader starts a fresh query instead of joining one that began
+// before the money moved.
+func TestForgetStartsFresh(t *testing.T) {
+	var queries atomic.Int32
+	gate := make(chan struct{})
+	r := &Reader{db: func(ctx context.Context, id string) (Account, error) {
+		n := queries.Add(1)
+		if n == 1 {
+			<-gate // the stale query, started before the commit
+			return Account{ID: id, Balance: 100}, nil
+		}
+		return Account{ID: id, Balance: 70}, nil
+	}}
+	stale := make(chan Account, 1)
+	go func() { a, _ := r.Account(context.Background(), "acc_1"); stale <- a }()
+	for queries.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	r.sf.Forget("acc_1") // the transfer committed
+	a, err := r.Account(context.Background(), "acc_1")
+	if err != nil || a.Balance != 70 || queries.Load() != 2 {
+		t.Fatalf("got %+v, %v after %d queries", a, err, queries.Load())
+	}
+	close(gate)
+	if a := <-stale; a.Balance != 100 {
+		t.Fatalf("stale caller got %+v", a)
+	}
+}

@@ -2,11 +2,16 @@ package entry
 
 import (
 	"encoding/json"
+	"runtime"
+	"strings"
 	"testing"
 )
 
 func TestHandles(t *testing.T) {
-	e := parse("acc_1,USD,500")
+	e, err := parse("acc_1,USD,500")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if e.Currency != usd || e.Currency.Value() != "USD" {
 		t.Fatalf("got %v", e.Currency.Value())
 	}
@@ -28,8 +33,9 @@ func TestHandleMarshalsEmpty(t *testing.T) {
 
 func TestZeroHandlePanics(t *testing.T) {
 	defer func() {
-		if recover() == nil {
-			t.Fatal("zero handle Value did not panic")
+		e, ok := recover().(runtime.Error)
+		if !ok || !strings.Contains(e.Error(), "nil pointer dereference") {
+			t.Fatalf("zero handle Value: %v", e)
 		}
 	}()
 	var e Entry // skipped parse

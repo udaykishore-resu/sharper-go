@@ -21,11 +21,12 @@ func init() {
 
 // DebugMux serves pprof and expvar on their own mux, never on
 // http.DefaultServeMux (Techniques 73 and 89). ledgerd binds it
-// to 127.0.0.1:6060, reachable only through port-forward.
+// to 127.0.0.1:6060, reachable only through port-forward. It
+// leaves out pprof.Cmdline: flags are the usual place a secret
+// leaks from, and nothing in a profile workflow needs them.
 func DebugMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)

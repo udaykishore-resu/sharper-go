@@ -3,6 +3,7 @@ package obs
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -66,5 +67,30 @@ func TestRedaction(t *testing.T) {
 	}
 	if !strings.Contains(out, "Bearer z") {
 		t.Fatal("expected a Secret inside a map to leak")
+	}
+}
+
+// Review: ReplaceAttr reaches leaf keys inside groups, WithGroup,
+// With and LogValuer groups, and a Secret inside a group is
+// resolved too. A group *named* token is not a leaf, so it passes,
+// as do maps, structs and error text.
+func TestRedactionNested(t *testing.T) {
+	var buf bytes.Buffer
+	log := NewLogger(jsonHandler(&buf))
+	log.Info("g", slog.Group("req", slog.Group("hdr",
+		slog.String("Authorization", "leak-1"))))
+	log.WithGroup("req").With("token", "leak-2").Info("w")
+	log.Info("s", slog.Group("req", "auth", Secret("leak-3")))
+	if out := buf.String(); strings.Contains(out, "leak-") {
+		t.Fatalf("leaked: %s", out)
+	}
+	buf.Reset()
+	log.Info("n", slog.Group("token", "v", "pass-1"))
+	log.Info("e", "err", errors.New("password=pass-2"))
+	log.Info("st", "c", struct{ Password string }{"pass-3"})
+	for _, s := range []string{"pass-1", "pass-2", "pass-3"} {
+		if !strings.Contains(buf.String(), s) {
+			t.Fatalf("expected %s to pass through", s)
+		}
 	}
 }

@@ -34,10 +34,12 @@ func TestBudgetCapsLoad(t *testing.T) {
 }
 
 func TestBackoffBounds(t *testing.T) {
-	p := Default
-	for n := range 70 { // n past 63 overflows the shift
-		if d := p.backoff(n); d < 0 || d > p.Max {
-			t.Fatalf("backoff(%d) = %v", n, d)
+	big := Policy{Attempts: 3, Base: 3 * time.Second, Max: time.Duration(1<<62 + 1)}
+	for _, p := range []Policy{Default, big} {
+		for n := range 70 { // a naive Base<<n overflows here
+			if d := p.backoff(n); d < 0 || d > p.Max {
+				t.Fatalf("%+v: backoff(%d) = %v", p, n, d)
+			}
 		}
 	}
 }

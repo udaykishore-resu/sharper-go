@@ -3,7 +3,8 @@ package obs
 
 import "sync"
 
-// Counters counts named events. The zero value is ready to use.
+// Counters counts named events. The zero value is
+// ready to use; a nil *Counters panics.
 type Counters struct {
 	mu sync.Mutex
 	m  map[string]int64

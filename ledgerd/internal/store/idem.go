@@ -11,10 +11,11 @@ import (
 	"example.com/ledgerd/internal/ledger"
 )
 
-// lease is how long a claim lives before another request may
-// take it over. It must outlast the server's WriteTimeout (20s)
-// so a slow request never loses its own key (Technique 52).
-const lease = 30 * time.Second
+// Lease is how long a claim lives before another request may
+// take it over. It outlasts the server's WriteTimeout (20 s) and
+// the middleware's httpapi.ClaimBudget (25 s), which ends the
+// holder's own use of the claim first (Technique 52).
+const Lease = 30 * time.Second
 
 // Begin claims (client, key) and commits at once. It returns:
 // nil, nil when this request now owns the key; the saved
@@ -33,7 +34,7 @@ func (s *Store) Begin(ctx context.Context, client, key string,
             VALUES ($1, 'inflight', $2,
                     now() + $3 * interval '1 second')
             ON CONFLICT DO NOTHING`,
-			k, hash[:], int(lease/time.Second))
+			k, hash[:], int(Lease/time.Second))
 		if err != nil || tag.RowsAffected() == 1 {
 			return err // error, or the key is ours
 		}
@@ -63,7 +64,7 @@ func (s *Store) Begin(ctx context.Context, client, key string,
 		}
 		_, err = tx.Exec(ctx, `UPDATE idem SET locked_until =
             now() + $2 * interval '1 second' WHERE key = $1`,
-			k, int(lease/time.Second))
+			k, int(Lease/time.Second))
 		return err
 	})
 	if err != nil {
@@ -84,9 +85,10 @@ func (s *Store) Finish(ctx context.Context, client, key string,
 	return err
 }
 
-// Release frees a claim after a 5xx, so the client may retry.
-// It never touches a done row, so a committed transfer keeps
-// its key whatever happened to the response.
+// Release frees a claim after a 5xx (or a response too big to
+// save), so the client may retry. It never touches a done row,
+// so a committed transfer keeps its key whatever happened to the
+// response.
 func (s *Store) Release(ctx context.Context, client, key string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM idem
         WHERE key = $1 AND state = 'inflight'`,

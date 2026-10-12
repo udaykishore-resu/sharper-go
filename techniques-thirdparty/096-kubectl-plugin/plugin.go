@@ -3,16 +3,20 @@
 package plugin
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -42,8 +46,71 @@ func newRoot() *cobra.Command {
 				c.OutOrStdout(), cfg, ns)
 		},
 	})
+	root.AddCommand(restartCmd(f))
 	root.SilenceUsage = true
 	return root
+}
+
+var errAborted = errors.New("aborted: nothing changed")
+
+// restartCmd is the plugin's one write: a rolling restart of the
+// ledgerd Deployment. It prints the context first and asks before
+// writing, unless --yes is set.
+func restartCmd(f *genericclioptions.ConfigFlags) *cobra.Command {
+	var yes bool
+	c := &cobra.Command{
+		Use: "restart",
+		RunE: func(c *cobra.Command, _ []string) error {
+			cfg, err := f.ToRESTConfig()
+			ldr := f.ToRawKubeConfigLoader()
+			ns, _, nsErr := ldr.Namespace()
+			raw, rawErr := ldr.RawConfig()
+			if err = errors.Join(err, nsErr, rawErr); err != nil {
+				return err
+			}
+			name := cmpOr(*f.Context, raw.CurrentContext)
+			what := "restart deployment ledgerd in " + ns
+			if !confirm(c.InOrStdin(), c.OutOrStdout(), name, what, yes) {
+				return errAborted
+			}
+			cs, err := kubernetes.NewForConfig(cfg)
+			if err != nil {
+				return err
+			}
+			return restartWith(c.Context(), cs, ns, time.Now())
+		},
+	}
+	c.Flags().BoolVar(&yes, "yes", false, "skip the confirmation prompt")
+	return c
+}
+
+// confirm names the context, then asks. Only "y" or "yes" goes
+// ahead; an empty line, EOF or anything else does not.
+func confirm(in io.Reader, out io.Writer, ctxName, what string,
+	yes bool) bool {
+	fmt.Fprintf(out, "context: %s\n", ctxName)
+	if yes {
+		return true
+	}
+	fmt.Fprintf(out, "%s? [y/N] ", what)
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true
+	}
+	return false
+}
+
+// restartWith does what kubectl rollout restart does: it stamps
+// the pod template, so the Deployment rolls its pods.
+func restartWith(ctx context.Context, cs kubernetes.Interface,
+	ns string, now time.Time) error {
+	patch := fmt.Sprintf(`{"spec":{"template":{"metadata":`+
+		`{"annotations":{"kubectl.kubernetes.io/restartedAt":%q}}}}}`,
+		now.UTC().Format(time.RFC3339))
+	_, err := cs.AppsV1().Deployments(ns).Patch(ctx, "ledgerd",
+		types.MergePatchType, []byte(patch), metav1.PatchOptions{})
+	return err
 }
 
 func cmpOr(a, b string) string {

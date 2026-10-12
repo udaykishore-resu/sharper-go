@@ -3,6 +3,7 @@
 package flight
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"runtime/trace"
@@ -36,4 +37,19 @@ func snapshot(fr *trace.FlightRecorder, path string) {
 			slog.Error("snapshot", "err", err)
 		}
 	}()
+}
+
+// waitIdle is for shutdown (Technique 45): let a running snapshot
+// finish, but never wait past ctx's deadline.
+func waitIdle(ctx context.Context) error {
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for busy.Load() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+		}
+	}
+	return nil
 }

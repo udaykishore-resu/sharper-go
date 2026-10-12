@@ -58,3 +58,21 @@ func TestNotifyContextCause(t *testing.T) {
 		t.Fatalf("Cause = %q", got)
 	}
 }
+
+// The first cancel wins: a child reports its parent's cause, and
+// later cancels change nothing.
+func TestFirstCauseWins(t *testing.T) {
+	root, cancel := context.WithCancelCause(context.Background())
+	child, stop := balanceCtx(root, time.Hour)
+	defer stop()
+	first := sigErr{syscall.SIGTERM}
+	cancel(first)
+	cancel(errors.New("later"))
+	stop()
+	if got := context.Cause(child); got != first {
+		t.Fatalf("child cause = %v, want %v", got, first)
+	}
+	if got := context.Cause(root); got != first {
+		t.Fatalf("root cause = %v", got)
+	}
+}

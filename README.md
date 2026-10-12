@@ -6,8 +6,9 @@ By Udaykishore Resu. Each technique in the book has a small, tested example here
 
 ## Requirements
 
-- **Go 1.26 or later.** Every module's `go.mod` says `go 1.26.0` and `toolchain go1.27.2`; with the default `GOTOOLCHAIN=auto`, an older Go fetches 1.27.1 for you (Technique 1).
+- **Go 1.26 or later.** Every module's `go.mod` says `go 1.26.0` and `toolchain go1.27.2`; with the default `GOTOOLCHAIN=auto`, an older Go fetches 1.27.2 for you (Technique 1).
 - **Tested with Go 1.27.2.** A few examples use Go 1.27 APIs (`encoding/json/v2`, `httptest.NewTestServer`, `synctest.Sleep`); those files carry a `//go:build go1.27` line.
+- **Version tags are tested.** `go test ./internal/versiontags` (in `techniques/`) vets each standard-library technique with its `go` line set to the Go version on the book's card.
 - **Docker** (optional) for `docker compose` and testcontainers-based integration tests. A plain Postgres works too (see below).
 - A C compiler for `go test -race` and for Technique 100's cgo path. Both fall back cleanly with `CGO_ENABLED=0`.
 
@@ -39,15 +40,15 @@ The book's source calls them "Hack N"; the printed book says "Technique N". Same
 
 | # | Technique | Code |
 |---|-----------|------|
-| 1 | Pin the compiler per repo with the toolchain line | [ledgerd/go.mod](ledgerd/go.mod) (`toolchain` line); [Dockerfile](ledgerd/Dockerfile) |
+| 1 | Pin the compiler per repo with the toolchain line | [techniques/001-toolchain-line](techniques/001-toolchain-line); [ledgerd/go.mod](ledgerd/go.mod) (`toolchain` line); [Dockerfile](ledgerd/Dockerfile) |
 | 2 | Track dev tools with the tool directive | [ledgerd/go.mod](ledgerd/go.mod) (`tool` block); [techniques-thirdparty/go.mod](techniques-thirdparty/go.mod) |
-| 3 | go work for multi-module local development | shell only (book text) |
-| 4 | govulncheck in CI | [ledgerd/Makefile](ledgerd/Makefile) (`vuln`) |
-| 5 | Reproducible, version-stamped binaries | [ledgerd/Makefile](ledgerd/Makefile) (`build`); [Dockerfile](ledgerd/Dockerfile) |
+| 3 | go work for multi-module local development | [techniques/003-go-work](techniques/003-go-work) |
+| 4 | govulncheck in CI | [techniques/004-govulncheck](techniques/004-govulncheck); [ledgerd/Makefile](ledgerd/Makefile) (`vuln`) |
+| 5 | Reproducible, version-stamped binaries | [techniques/005-reproducible-build](techniques/005-reproducible-build); [ledgerd/Makefile](ledgerd/Makefile) (`build`) |
 | 6 | debug.ReadBuildInfo for a free version endpoint | [techniques/006-buildinfo-version](techniques/006-buildinfo-version); also [ledgerd/internal/obs/version.go](ledgerd/internal/obs/version.go) |
 | 7 | Build tags for platforms and integration tests | [techniques/007-build-tags](techniques/007-build-tags) |
 | 8 | go generate that's actually reproducible | [techniques-thirdparty/008-go-generate](techniques-thirdparty/008-go-generate) |
-| 9 | GOPRIVATE, GOPROXY and GOFLAGS for corporate setups | [ledgerd/Dockerfile](ledgerd/Dockerfile) (`GOPRIVATE`, netrc secret) |
+| 9 | GOPRIVATE, GOPROXY and GOFLAGS for corporate setups | [techniques/009-goprivate](techniques/009-goprivate); [ledgerd/Dockerfile](ledgerd/Dockerfile) (netrc secret) |
 | 10 | A baseline vet + staticcheck + golangci-lint config | [ledgerd/.golangci.yml](ledgerd/.golangci.yml) |
 | 11 | Range over integers | [techniques/011-range-over-int](techniques/011-range-over-int) |
 | 12 | Per-iteration loop variables: delete every v := v | [techniques-thirdparty/012-loopvar](techniques-thirdparty/012-loopvar) |
@@ -58,7 +59,7 @@ The book's source calls them "Hack N"; the printed book says "Technique N". Same
 | 17 | Generic type aliases | [techniques/017-generic-aliases](techniques/017-generic-aliases) |
 | 18 | cmp.Or for defaults | [techniques/018-cmp-or](techniques/018-cmp-or); also [ledgerd/internal/config](ledgerd/internal/config) |
 | 19 | Interning with the unique package | [techniques/019-unique](techniques/019-unique) |
-| 20 | The omitzero JSON tag | [techniques/020-omitzero](techniques/020-omitzero) |
+| 20 | The omitzero JSON tag | [techniques/020-omitzero](techniques/020-omitzero); Part II synthesis export: [techniques/synth-02-export](techniques/synth-02-export) |
 | 21 | Wrap with %w, inspect with errors.Is and errors.As | [techniques-thirdparty/021-wrap-errors](techniques-thirdparty/021-wrap-errors) |
 | 22 | errors.Join for multi-errors | [techniques/022-errors-join](techniques/022-errors-join); also [ledgerd/internal/ledger](ledgerd/internal/ledger) |
 | 23 | Sentinel vs typed errors: a one-line decision rule | [techniques/023-sentinel-vs-typed](techniques/023-sentinel-vs-typed) |
@@ -80,7 +81,7 @@ The book's source calls them "Hack N"; the printed book says "Technique N". Same
 | 39 | atomic.Pointer for hot-swappable config | [techniques/039-atomic-pointer](techniques/039-atomic-pointer) |
 | 40 | Catch goroutine leaks in tests | [techniques/040-goroutine-leaks](techniques/040-goroutine-leaks) |
 | 41 | Channel or mutex: a decision table | [techniques/041-channel-or-mutex](techniques/041-channel-or-mutex) |
-| 42 | The race detector in CI, the cheap way | [ledgerd/Makefile](ledgerd/Makefile) (`test`) |
+| 42 | The race detector in CI, the cheap way | [techniques/042-race-ci](techniques/042-race-ci); also [ledgerd/Makefile](ledgerd/Makefile) (`test`) |
 | 43 | Method and wildcard routing in net/http ServeMux | [techniques/043-servemux-routing](techniques/043-servemux-routing); also [ledgerd/internal/httpapi/api.go](ledgerd/internal/httpapi/api.go) |
 | 44 | The four http.Server timeouts you must set | [techniques/044-server-timeouts](techniques/044-server-timeouts); also [ledgerd/internal/httpapi/server.go](ledgerd/internal/httpapi/server.go) |
 | 45 | Graceful shutdown with signal.NotifyContext | [techniques/045-graceful-shutdown](techniques/045-graceful-shutdown); also [ledgerd/cmd/ledgerd/serve.go](ledgerd/cmd/ledgerd/serve.go) |
@@ -109,15 +110,15 @@ The book's source calls them "Hack N"; the printed book says "Technique N". Same
 | 68 | testcontainers-go for real integration tests | [techniques-thirdparty/068-testcontainers](techniques-thirdparty/068-testcontainers); also [ledgerd/internal/store/store_integration_test.go](ledgerd/internal/store/store_integration_test.go) |
 | 69 | testdata/ fixtures done right | [techniques/069-testdata](techniques/069-testdata) |
 | 70 | Benchmarks with b.Loop (1.24) | [techniques/070-b-loop](techniques/070-b-loop) |
-| 71 | benchstat: compare runs honestly | shell only; benchstat is a `tool` in [ledgerd/go.mod](ledgerd/go.mod) |
-| 72 | Coverage for integration tests with go build -cover | shell only (book text) |
+| 71 | benchstat: compare runs honestly | shell only; benchstat is a `tool` in [ledgerd/go.mod](ledgerd/go.mod); output shape checked in [ledgerd/internal/ledger/benchstat_review_test.go](ledgerd/internal/ledger/benchstat_review_test.go) |
+| 72 | Coverage for integration tests with go build -cover | [techniques/072-integration-cover](techniques/072-integration-cover) (`cover.sh`, run by its test) |
 | 73 | pprof in production, safely | [techniques/073-pprof-production](techniques/073-pprof-production) |
-| 74 | Profile-guided optimization (PGO) | shell only (drop a profile at `ledgerd/cmd/ledgerd/default.pgo`) |
+| 74 | Profile-guided optimization (PGO) | [techniques/074-pgo](techniques/074-pgo) (end-to-end with `PGO_E2E=1`; slow) |
 | 75 | Read escape analysis with -gcflags=-m | [techniques/075-escape-analysis](techniques/075-escape-analysis) |
 | 76 | Preallocate slices and maps | [techniques/076-preallocate](techniques/076-preallocate) |
 | 77 | Reuse strings.Builder and bytes.Buffer | [techniques/077-buffer-reuse](techniques/077-buffer-reuse) |
 | 78 | sync.Pool: when it helps, when it hurts | [techniques/078-sync-pool](techniques/078-sync-pool) |
-| 79 | GOMEMLIMIT for containers | [ledgerd/k8s/deployment.yaml](ledgerd/k8s/deployment.yaml) |
+| 79 | GOMEMLIMIT for containers | [techniques/079-gomemlimit](techniques/079-gomemlimit), [ledgerd/k8s/deployment.yaml](ledgerd/k8s/deployment.yaml) |
 | 80 | Container-aware GOMAXPROCS (1.25) | [techniques/080-gomaxprocs](techniques/080-gomaxprocs) |
 | 81 | Execution traces and the flight recorder (1.25) | [techniques/081-flight-recorder](techniques/081-flight-recorder) |
 | 82 | Weak pointers and runtime.AddCleanup (1.24) | [techniques/082-weak-pointers](techniques/082-weak-pointers) |

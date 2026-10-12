@@ -10,9 +10,13 @@ type Transfer struct {
 	Amount       int64
 }
 
+// KeyFor puts a ':' between the parts. The amount never contains
+// one, so the last ':' splits any key back into From and Amount:
+// ("ab", 12) and ("ab1", 2) give different keys.
 func KeyFor(t *Transfer) string {
 	buf := make([]byte, 0, 64)
 	buf = append(buf, t.From...)
+	buf = append(buf, ':')
 	buf = strconv.AppendInt(buf, t.Amount, 10)
 	return string(buf)
 }

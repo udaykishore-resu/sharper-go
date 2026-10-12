@@ -50,3 +50,11 @@ func validateBad(ok bool) error {
 	}
 	return verr // a typed nil when ok: never == nil
 }
+
+// validateGood is the fix: return the literal nil on success.
+func validateGood(ok bool) error {
+	if !ok {
+		return &ValidationError{Field: "amount"}
+	}
+	return nil
+}

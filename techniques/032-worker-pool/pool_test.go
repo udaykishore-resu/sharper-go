@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func TestPoolReportsPerJob(t *testing.T) {
 		return nil
 	}
 	var bad int
-	for r := range pool(t.Context(), 4, produce(t.Context(), ts), apply) {
+	for r := range pool(t.Context(), 4, produce(t.Context(), slices.Values(ts), 0), apply) {
 		if r.Err != nil {
 			bad++
 		}
@@ -42,7 +43,7 @@ func TestBoundedConcurrency(t *testing.T) {
 		now.Add(-1)
 		return nil
 	}
-	for range pool(t.Context(), 4, produce(t.Context(), make([]Transfer, 200)), apply) {
+	for range pool(t.Context(), 4, produce(t.Context(), slices.Values(make([]Transfer, 200)), 0), apply) {
 	}
 	if peak.Load() > 4 {
 		t.Fatalf("peak concurrency %d > 4", peak.Load())
@@ -60,7 +61,7 @@ func TestCancelStopsEverything(t *testing.T) {
 		}
 		return nil
 	}
-	out := pool(ctx, 16, produce(ctx, make([]Transfer, 1000)), apply)
+	out := pool(ctx, 16, produce(ctx, slices.Values(make([]Transfer, 1000)), 0), apply)
 	for range 100 {
 		<-out
 	}

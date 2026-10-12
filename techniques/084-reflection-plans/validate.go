@@ -25,7 +25,10 @@ func planFor(t reflect.Type) []int {
 }
 
 func Required(s any) error {
-	v := reflect.ValueOf(s)
+	v := reflect.Indirect(reflect.ValueOf(s))
+	if v.Kind() != reflect.Struct {
+		return fmt.Errorf("validate: %T is not a struct", s)
+	}
 	for _, i := range planFor(v.Type()) {
 		if v.Field(i).IsZero() {
 			name := v.Type().Field(i).Name
@@ -67,7 +70,10 @@ func (r TransferReq) Check() error {
 
 // uncached redoes the analysis every call, for the benchmark.
 func uncached(s any) error {
-	v := reflect.ValueOf(s)
+	v := reflect.Indirect(reflect.ValueOf(s))
+	if v.Kind() != reflect.Struct {
+		return fmt.Errorf("validate: %T is not a struct", s)
+	}
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
 		if t.Field(i).Tag.Get("validate") == "required" && v.Field(i).IsZero() {

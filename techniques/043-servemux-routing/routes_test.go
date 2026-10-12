@@ -64,3 +64,29 @@ func TestHandlerWithoutMux(t *testing.T) {
 		t.Fatalf("got %q", rec.Body)
 	}
 }
+
+// {$} matches only the exact path; without it a trailing slash
+// pattern matches everything below it.
+func TestExactPathAndPattern(t *testing.T) {
+	mux := http.NewServeMux()
+	echo := func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, r.Pattern) // Go 1.23: the pattern that matched
+	}
+	mux.HandleFunc("GET /files/{$}", echo)
+	mux.HandleFunc("GET /files/{path...}", echo)
+	for path, want := range map[string]string{
+		"/files/":      "GET /files/{$}",
+		"/files/a/b.c": "GET /files/{path...}",
+	} {
+		if got := serve(mux, "GET", path).Body.String(); got != want {
+			t.Errorf("%s matched %q, want %q", path, got, want)
+		}
+	}
+	// HEAD reports the GET pattern; an unknown method gets 405.
+	if got := serve(mux, "HEAD", "/files/").Code; got != 200 {
+		t.Errorf("HEAD = %d", got)
+	}
+	if got := serve(mux, "PUT", "/files/").Code; got != 405 {
+		t.Errorf("PUT = %d", got)
+	}
+}

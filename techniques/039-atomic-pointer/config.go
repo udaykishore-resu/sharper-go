@@ -3,6 +3,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -26,14 +27,33 @@ func (h *Holder) Reload(path string) error {
 		return err
 	}
 	var c Config
-	if err := json.Unmarshal(b, &c); err != nil {
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields() // a typo is an error
+	if err := d.Decode(&c); err != nil {
 		return err
 	}
-	if c.MaxTransfer <= 0 {
-		return errors.New("max_transfer must be > 0")
+	if err := c.validate(); err != nil {
+		return err
 	}
 	h.p.Store(&c)
 	return nil
+}
+
+// validate reports every broken rule at once. A missing
+// max_transfer decodes to 0 and fails here; a missing frozen
+// decodes to nil and fails too, so "none frozen" must be {}.
+func (c *Config) validate() error {
+	var errs []error
+	if c.MaxTransfer <= 0 {
+		errs = append(errs, errors.New("max_transfer must be > 0"))
+	}
+	if c.Frozen == nil {
+		errs = append(errs, errors.New("frozen is required; use {} for none"))
+	}
+	if _, ok := c.Frozen[""]; ok {
+		errs = append(errs, errors.New("frozen has an empty account ID"))
+	}
+	return errors.Join(errs...)
 }
 
 // rwHolder is the RWMutex version, for the benchmark.

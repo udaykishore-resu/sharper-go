@@ -31,7 +31,25 @@ func TestInsertWritesSharedArray(t *testing.T) {
 	a = []int{1, 2, 3}
 	_ = slices.Insert(slices.Clip(a[:2]), 0, 9)
 	if !slices.Equal(a, []int{1, 2, 3}) {
-		t.Fatalf("Clip did not protect a: %v", a)
+		t.Fatalf("Clip did not make Insert reallocate: %v", a)
+	}
+}
+
+// Clip only caps capacity; the clipped slice still shares a's
+// elements. Clone copies them, so writes stay local.
+func TestClipSharesCloneIsolates(t *testing.T) {
+	a := []int{1, 2, 3}
+	c := slices.Clip(a[:2])
+	c[0] = 7
+	if a[0] != 7 {
+		t.Fatalf("Clip copied: a = %v", a)
+	}
+	a = []int{1, 2, 3}
+	k := slices.Clone(a[:2])
+	k[0] = 7
+	k = slices.Insert(k, 0, 9)
+	if !slices.Equal(a, []int{1, 2, 3}) || !slices.Equal(k, []int{9, 7, 2}) {
+		t.Fatalf("a = %v, k = %v", a, k)
 	}
 }
 

@@ -18,9 +18,11 @@ type auditor interface {
 
 // afterCommit keeps the request's values but not its
 // cancellation, and puts a budget back right away. wg lets
-// shutdown wait for detached work.
-func afterCommit(ctx context.Context, wg *sync.WaitGroup,
-	a auditor, t Transfer) {
+// shutdown wait for detached work. It is best effort: a crash or
+// the 5 s budget still loses the row. Rows that must survive go
+// in the transaction or an outbox (Technique 58).
+func afterCommit(ctx context.Context,
+	wg *sync.WaitGroup, a auditor, t Transfer) {
 	bg := context.WithoutCancel(ctx)
 	wg.Go(func() {
 		ctx, cancel := context.WithTimeout(

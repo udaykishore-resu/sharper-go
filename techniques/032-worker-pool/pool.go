@@ -4,6 +4,7 @@ package pool
 
 import (
 	"context"
+	"iter"
 	"sync"
 )
 
@@ -53,13 +54,15 @@ func work(ctx context.Context, jobs <-chan Transfer,
 	}
 }
 
-// produce owns jobs: its first line closes it on every path, and
-// each send selects on ctx.Done().
-func produce(ctx context.Context, ts []Transfer) <-chan Transfer {
-	jobs := make(chan Transfer)
+// produce owns jobs. depth is the whole queue: 0 means each
+// row waits for a free worker, which is the backpressure.
+func produce(ctx context.Context,
+	rows iter.Seq[Transfer],
+	depth int) <-chan Transfer {
+	jobs := make(chan Transfer, depth)
 	go func() {
 		defer close(jobs)
-		for _, t := range ts {
+		for t := range rows {
 			select {
 			case jobs <- t:
 			case <-ctx.Done():

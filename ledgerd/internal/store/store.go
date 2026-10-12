@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -19,7 +20,8 @@ import (
 
 // Store owns the pool. Build it with Open.
 type Store struct {
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	schemaOK atomic.Bool // CheckSchema has passed once
 }
 
 // Option configures Open (Technique 25).
@@ -63,8 +65,23 @@ func Open(ctx context.Context, dsn string, opts ...Option) (*Store, error) {
 // Close closes the pool. Call it after the HTTP servers drain.
 func (s *Store) Close() { s.pool.Close() }
 
-// Ping backs /readyz.
-func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
+// Ping backs /readyz. Until CheckSchema has passed once, it also
+// fails while the database is behind this binary's newest
+// embedded migration (Technique 61); after that it is a plain
+// ping, since a schema only moves forward.
+func (s *Store) Ping(ctx context.Context) error {
+	if err := s.pool.Ping(ctx); err != nil {
+		return err
+	}
+	if s.schemaOK.Load() {
+		return nil
+	}
+	if err := s.CheckSchema(ctx); err != nil {
+		return err
+	}
+	s.schemaOK.Store(true)
+	return nil
+}
 
 // AcquiredConns feeds the pool gauge (Technique 88).
 func (s *Store) AcquiredConns() int32 { return s.pool.Stat().AcquiredConns() }

@@ -19,7 +19,8 @@ const schema = `
 CREATE TABLE accounts (id text PRIMARY KEY, balance bigint NOT NULL);
 CREATE TABLE transfers (id text PRIMARY KEY, amount bigint NOT NULL);
 CREATE TABLE idem (key text PRIMARY KEY,
-    state text NOT NULL DEFAULT 'done', response bytea);
+    state text NOT NULL DEFAULT 'done',
+    status integer NOT NULL DEFAULT 201, response bytea);
 CREATE TABLE outbox (id bigserial PRIMARY KEY, topic text NOT NULL,
     payload jsonb NOT NULL, sent_at timestamptz);
 INSERT INTO accounts VALUES ('a1', 1000), ('a2', 0);`
@@ -115,5 +116,44 @@ func TestConcurrent(t *testing.T) {
 	wg.Wait()
 	if a1, a2 := balance(t, s, "a1"), balance(t, s, "a2"); a1 < 0 || a1+a2 != 1000 {
 		t.Fatalf("a1=%d a2=%d", a1, a2)
+	}
+}
+
+// Two transfers on one key at once: the loser's 40001 retry
+// replays the winner's response, so money moves once.
+func TestSameKeyRace(t *testing.T) {
+	s := setup(t)
+	for round := range 10 {
+		key := fmt.Sprint("race", round)
+		var resp [2][]byte
+		var errs [2]error
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range 2 {
+			wg.Go(func() {
+				<-start
+				resp[i], errs[i] = s.Transfer(context.Background(), ledger.Transfer{
+					ID: fmt.Sprint(key, "-", i), From: "a1", To: "a2", Amount: 1, Key: key})
+			})
+		}
+		close(start)
+		wg.Wait()
+		if errs[0] != nil || errs[1] != nil || string(resp[0]) != string(resp[1]) {
+			t.Fatalf("errs %v %v, bodies %s %s", errs[0], errs[1], resp[0], resp[1])
+		}
+	}
+	if balance(t, s, "a2") != 10 {
+		t.Fatalf("a2 = %d, want 10", balance(t, s, "a2"))
+	}
+}
+
+// A key that finished with an error is not replayed as success.
+func TestDoneErrorNotReplayed(t *testing.T) {
+	s := setup(t)
+	s.pool.Exec(t.Context(), `INSERT INTO idem (key, status, response)
+        VALUES ('k9', 409, '{}')`)
+	_, err := s.Transfer(t.Context(), ledger.Transfer{ID: "t9", From: "a1", To: "a2", Amount: 1, Key: "k9"})
+	if !errors.Is(err, ledger.ErrBusy) || balance(t, s, "a2") != 0 {
+		t.Fatalf("err = %v", err)
 	}
 }

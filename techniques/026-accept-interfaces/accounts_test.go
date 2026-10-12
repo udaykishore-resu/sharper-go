@@ -1,9 +1,13 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -31,7 +35,21 @@ func TestNotFoundFromFake(t *testing.T) {
 }
 
 func TestTypedNil(t *testing.T) {
-	if err := validateBad(true); err == nil {
+	err := validateBad(true)
+	if err == nil {
 		t.Fatal("expected the typed-nil trap to give a non-nil error")
+	}
+	// fmt (and slog's text handler, which formats with fmt) prints
+	// the nil pointer inside the interface as <nil>.
+	if got := fmt.Sprintf("%v", err); got != "<nil>" {
+		t.Fatalf("logged as %q", got)
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewTextHandler(&buf, nil)).Error("transfer", "err", err)
+	if !strings.Contains(buf.String(), "err=<nil>") {
+		t.Fatalf("slog line: %q", buf.String())
+	}
+	if validateGood(true) != nil || validateGood(false) == nil {
+		t.Fatal("the literal-nil version must be nil only on success")
 	}
 }

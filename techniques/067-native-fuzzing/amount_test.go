@@ -1,6 +1,10 @@
 package amount
 
-import "testing"
+import (
+	"strconv"
+	"strings"
+	"testing"
+)
 
 func FuzzParseAmount(f *testing.F) {
 	for _, s := range []string{"0", "12.34", "-3"} {
@@ -11,8 +15,10 @@ func FuzzParseAmount(f *testing.F) {
 		if err != nil {
 			return // rejecting input is fine
 		}
-		if cents < 0 {
-			t.Fatalf("%q -> negative %d", s, cents)
+		whole, _, _ := strings.Cut(s, ".")
+		w, _ := strconv.ParseInt(whole, 10, 64)
+		if cents < 0 || cents/100 != w {
+			t.Fatalf("%q -> %d cents", s, cents)
 		}
 		back := FormatAmount(cents)
 		again, err := ParseAmount(back)
@@ -31,7 +37,8 @@ func TestNaiveParserBug(t *testing.T) {
 		t.Fatalf("parseNaive(1.-5) = %d, %v", got, err)
 	}
 	// The round trip alone would have passed: 95 cents formats
-	// and parses back to 95 cents. Only cents < 0 catches it.
+	// and parses back to 95 cents. The whole-part rule catches it
+	// (TestNaiveFailsWholePartRule).
 	if back, err := ParseAmount(FormatAmount(got)); err != nil || back != got {
 		t.Fatalf("round trip of %d: %d, %v", got, back, err)
 	}

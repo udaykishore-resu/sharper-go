@@ -3,6 +3,7 @@
 package ledgerctl
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -39,16 +40,33 @@ func usage(w io.Writer) {
 	}
 }
 
+// Main is what cmd/ledgerctl calls. It exits 0 on success and on
+// -h (flag.ErrHelp), and 1 on any other error, after one line on
+// stderr.
+func Main(ctx context.Context, args []string) int {
+	err := dispatch(ctx, args)
+	switch {
+	case err == nil, errors.Is(err, flag.ErrHelp):
+		return 0
+	}
+	fmt.Fprintln(os.Stderr, "ledgerctl:", err)
+	return 1
+}
+
 // lastReplay records what replay parsed, for the tests.
 var lastReplay struct {
 	file   string
 	dryRun bool
+	token  string
 }
 
 func replay(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("replay", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
 	dry := fs.Bool("dry-run", true, "print, don't post")
+	// A secret never becomes a flag default: -h prints defaults.
+	// Read the environment after parsing instead.
+	tok := fs.String("token", "",
+		"API token (default: $LEDGERCTL_TOKEN)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -57,11 +75,14 @@ func replay(ctx context.Context, args []string) error {
 		return fmt.Errorf("replay: want one file, got %q", fs.Args())
 	}
 	lastReplay.file, lastReplay.dryRun = fs.Arg(0), *dry
+	lastReplay.token = cmp.Or(*tok, os.Getenv("LEDGERCTL_TOKEN"))
+	if lastReplay.token == "" {
+		return errors.New("replay: no token: set -token or LEDGERCTL_TOKEN")
+	}
 	return ctx.Err()
 }
 
 func verify(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
 	return fs.Parse(args)
 }

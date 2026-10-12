@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"example.com/ledgerd/internal/ledger"
 )
@@ -30,14 +31,31 @@ type IdemStore interface {
 	Release(ctx context.Context, client, key string) error
 }
 
-// recorder is statusWriter plus a copy of the body.
+// ClaimBudget is how long one request may use its claim. It
+// ends 5 s before the store's 30 s lease (store.Lease), so a
+// takeover can only meet a stale holder at commit, where the
+// row lock in store.Transfer serialises them.
+const ClaimBudget = 25 * time.Second
+
+// MaxSaved bounds the response copy kept for replay. A bigger
+// response is not saved; the claim is released instead, which
+// is safe because Release never touches a committed key.
+const MaxSaved = 64 << 10
+
+// recorder is statusWriter plus a bounded copy of the body. The
+// embedded statusWriter turns a bare Write into a 200.
 type recorder struct {
 	statusWriter
-	buf bytes.Buffer
+	buf      bytes.Buffer
+	overflow bool
 }
 
 func (r *recorder) Write(b []byte) (int, error) {
-	r.buf.Write(b)
+	if r.buf.Len()+len(b) > MaxSaved {
+		r.overflow = true
+	} else {
+		r.buf.Write(b)
+	}
 	return r.statusWriter.Write(b)
 }
 
@@ -59,6 +77,7 @@ func (a *API) idem(next http.Handler) http.Handler {
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
+		until := time.Now().Add(ClaimBudget) // before the claim
 		saved, err := st.Begin(r.Context(), client, key,
 			sha256.Sum256(body))
 		switch {
@@ -80,16 +99,26 @@ func (a *API) idem(next http.Handler) http.Handler {
 			return
 		}
 		rec := &recorder{statusWriter: statusWriter{ResponseWriter: w}}
-		next.ServeHTTP(rec, r)
-		ctx := context.WithoutCancel(r.Context())
-		if cmp.Or(rec.status, 200) >= 500 {
+		hctx, cancel := context.WithDeadline(r.Context(), until)
+		defer cancel()
+		next.ServeHTTP(rec, r.WithContext(hctx))
+		status := cmp.Or(rec.status, http.StatusOK) // wrote nothing
+		// The client may have hung up; it is the one that retries.
+		ctx, cancel2 := context.WithDeadline(
+			context.WithoutCancel(r.Context()), until)
+		defer cancel2()
+		// Save only a final answer. A 5xx, a response too big to
+		// keep, or a handler whose context ended (client gone,
+		// shutdown, budget) is not one: release, so the retry runs
+		// again. Release never touches a key a transfer committed.
+		if status >= 500 || rec.overflow || hctx.Err() != nil {
 			if err := st.Release(ctx, client, key); err != nil {
 				a.log.ErrorContext(ctx, "idempotency release", "err", err)
 			}
 			return
 		}
 		err = st.Finish(ctx, client, key,
-			Saved{Status: cmp.Or(rec.status, 200), Body: rec.buf.Bytes()})
+			Saved{Status: status, Body: rec.buf.Bytes()})
 		if err != nil {
 			a.log.ErrorContext(ctx, "idempotency finish", "err", err)
 		}

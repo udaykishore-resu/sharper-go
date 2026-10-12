@@ -1,5 +1,6 @@
-# Appendix C.5: one Job per release, from the same image. The
-# rollout waits for it; only this Job's role needs DDL rights.
+# Appendix C.5: one Job per release, from the same image. New
+# pods fail /readyz until it succeeds (store.Ping checks the
+# schema); only this Job's role needs DDL rights.
 apiVersion: batch/v1
 kind: Job
 metadata:

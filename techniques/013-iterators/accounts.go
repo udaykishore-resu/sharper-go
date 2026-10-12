@@ -13,7 +13,9 @@ type Account struct {
 	Balance int64
 }
 
-// Pager is anything with a Page method.
+// Pager is anything with a Page method. The contract Accounts
+// relies on: Page returns up to n accounts with ID > after, in ID
+// order, and a page shorter than n means there are no more.
 type Pager interface {
 	Page(ctx context.Context, after string, n int) ([]Account, error)
 }

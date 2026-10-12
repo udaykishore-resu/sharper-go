@@ -5,17 +5,27 @@ package idem
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"io"
 	"net/http"
 	"sync"
+	"time"
 )
 
 var (
 	ErrInFlight = errors.New("request in flight")
 	ErrMismatch = errors.New("key reused with other body")
+)
+
+// Lease is how long a claim lives before a retry may take it
+// over; claimBudget ends the holder's own use of it 5 s earlier.
+const (
+	Lease       = 30 * time.Second
+	claimBudget = 25 * time.Second
+	maxSaved    = 64 << 10 // largest response kept for replay
 )
 
 type Saved struct {
@@ -26,6 +36,7 @@ type Saved struct {
 type row struct {
 	hash  [32]byte
 	done  bool
+	until time.Time // lease end while in flight
 	saved Saved
 }
 
@@ -43,14 +54,18 @@ func (s *Store) Begin(_ context.Context, client, key string,
 	defer s.mu.Unlock()
 	k := [2]string{client, key} // never the bare key
 	r, ok := s.rows[k]
+	now := time.Now()
 	switch {
 	case !ok:
-		s.rows[k] = &row{hash: hash}
+		s.rows[k] = &row{hash: hash, until: now.Add(Lease)}
 		return nil, nil // we own it
 	case r.hash != hash:
 		return nil, ErrMismatch
-	case !r.done:
+	case !r.done && now.Before(r.until):
 		return nil, ErrInFlight
+	case !r.done: // the holder died: take the claim over
+		r.until = now.Add(Lease)
+		return nil, nil
 	}
 	return &r.saved, nil
 }
@@ -73,6 +88,8 @@ func (s *Store) Release(_ context.Context, client, key string) {
 	}
 }
 
+// statusWriter is Technique 47's: the first status wins, and a
+// bare Write counts as 200.
 type statusWriter struct {
 	http.ResponseWriter
 	status int
@@ -85,17 +102,27 @@ func (w *statusWriter) WriteHeader(c int) {
 	w.ResponseWriter.WriteHeader(c)
 }
 
+func (w *statusWriter) Write(b []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// recorder keeps a copy of the body, up to maxSaved bytes.
 type recorder struct {
 	statusWriter
-	buf bytes.Buffer
+	buf      bytes.Buffer
+	overflow bool
 }
 
 func (r *recorder) Write(b []byte) (int, error) {
-	if r.status == 0 {
-		r.status = 200
+	if r.buf.Len()+len(b) > maxSaved {
+		r.overflow = true
+	} else {
+		r.buf.Write(b)
 	}
-	r.buf.Write(b)
-	return r.ResponseWriter.Write(b)
+	return r.statusWriter.Write(b)
 }
 
 // Middleware wraps POST /v1/transfers only. client names the
@@ -115,6 +142,7 @@ func Middleware(st *Store, client func(*http.Request) string,
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
+		until := time.Now().Add(claimBudget)
 		saved, err := st.Begin(r.Context(), client, key,
 			sha256.Sum256(body))
 		switch {
@@ -134,13 +162,18 @@ func Middleware(st *Store, client func(*http.Request) string,
 			return
 		}
 		rec := &recorder{statusWriter: statusWriter{ResponseWriter: w}}
-		next.ServeHTTP(rec, r)
-		ctx := context.WithoutCancel(r.Context())
-		if rec.status >= 500 {
+		hctx, cancel := context.WithDeadline(r.Context(), until)
+		defer cancel()
+		next.ServeHTTP(rec, r.WithContext(hctx))
+		status := cmp.Or(rec.status, 200) // wrote nothing
+		ctx, stop := context.WithDeadline(
+			context.WithoutCancel(r.Context()), until)
+		defer stop()
+		if status >= 500 || rec.overflow || hctx.Err() != nil {
 			st.Release(ctx, client, key)
 			return
 		}
 		st.Finish(ctx, client, key,
-			Saved{rec.status, rec.buf.Bytes()})
+			Saved{status, rec.buf.Bytes()})
 	})
 }

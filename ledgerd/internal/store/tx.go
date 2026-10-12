@@ -47,17 +47,20 @@ func (s *Store) inTx(ctx context.Context, opts pgx.TxOptions,
 
 // RunTx calls InTx up to three times while Postgres asks for a
 // retry: 40001 (serialization) or 40P01 (deadlock), with full
-// jitter and a few seconds in total. fn must be pure database
-// work, since it may run more than once.
+// jitter, inside a 5-second budget. Every other error returns at
+// once. fn must be pure database work, since it may run more
+// than once. Three attempts and 5s are ledgerd's defaults.
 func (s *Store) RunTx(ctx context.Context,
 	fn func(pgx.Tx) error) error {
 	ctx, cancel := context.WithTimeoutCause(ctx, 5*time.Second,
 		errors.New("store: transaction budget 5s"))
 	defer cancel()
+	const attempts = 3
 	var err error
-	for attempt := range 3 {
-		if err = s.InTx(ctx, fn); !retryable(err) {
-			return err
+	for attempt := range attempts {
+		err = s.InTx(ctx, fn)
+		if !retryable(err) || attempt == attempts-1 {
+			break
 		}
 		d := 10 * time.Millisecond << attempt
 		select {
@@ -77,38 +80,106 @@ func retryable(err error) bool {
 
 // Transfer claims the idempotency key, moves the money, writes
 // the outbox event and saves the response in one transaction
-// (Techniques 52, 57 and 58). A key the middleware claimed is
-// still 'inflight' and flips to 'done' here; a key that is
-// already done returns no row, so its stored response replays.
+// (Techniques 52, 57 and 58).
 func (s *Store) Transfer(ctx context.Context,
-	tr ledger.Transfer) (resp []byte, err error) {
-	err = s.RunTx(ctx, func(tx pgx.Tx) error {
-		var ok bool
-		err := tx.QueryRow(ctx, `INSERT INTO idem (key)
-            VALUES ($1) ON CONFLICT (key) DO UPDATE
-            SET state = 'done'
-            WHERE idem.state = 'inflight'
-            RETURNING true`, tr.Key).Scan(&ok)
-		if errors.Is(err, pgx.ErrNoRows) { // seen it
-			return tx.QueryRow(ctx, `SELECT response
-                FROM idem WHERE key = $1`,
-				tr.Key).Scan(&resp)
-		}
-		if err != nil {
-			return err
-		}
-		resp, err = applyTransfer(ctx, tx, tr)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `UPDATE idem
-            SET response = $2 WHERE key = $1`, tr.Key, resp)
+	tr ledger.Transfer) ([]byte, error) {
+	var resp []byte
+	err := s.RunTx(ctx, func(tx pgx.Tx) error {
+		var err error
+		resp, err = transferTx(ctx, tx, tr)
 		return err
 	})
 	if err != nil {
 		return nil, translate(ctx, fmt.Errorf("transfer %s", tr.ID), err)
 	}
 	return resp, nil
+}
+
+// transferTx is the state machine of an idempotency key inside
+// the money transaction. tr.Key is the client-scoped key. A key
+// the middleware claimed is 'inflight' and flips to 'done' here;
+// a caller with no middleware (the bulk import) inserts it as
+// 'done'. A key that is already done updates nothing, returns no
+// row, and replays. Two transactions racing on one key serialise
+// on the row lock: the loser gets 40001, and RunTx's retry
+// replays the winner's response (TestSameKeyRace,
+// TestTakeoverRace).
+func transferTx(ctx context.Context, tx pgx.Tx,
+	tr ledger.Transfer) ([]byte, error) {
+	var ok bool
+	err := tx.QueryRow(ctx, `INSERT INTO idem
+        (key, state) VALUES ($1, 'done')
+        ON CONFLICT (key) DO UPDATE SET state = 'done'
+        WHERE idem.state = 'inflight'
+        RETURNING true`, tr.Key).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) { // already done
+		return replay(ctx, tx, tr.Key)
+	}
+	if err != nil {
+		return nil, err
+	}
+	resp, err := applyTransfer(ctx, tx, tr)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(ctx, `UPDATE idem SET response = $2
+        WHERE key = $1`, tr.Key, resp)
+	return resp, err
+}
+
+// replay returns the response a finished key saved. Only a
+// committed transfer is replayed as a success: if the key
+// finished with an error instead (the middleware's Finish saved
+// a 4xx after a lease takeover), it reports ErrBusy, and the
+// client's retry gets that saved error from the middleware.
+func replay(ctx context.Context, tx pgx.Tx,
+	key string) ([]byte, error) {
+	var (
+		status int
+		body   []byte
+	)
+	err := tx.QueryRow(ctx, `SELECT status, response
+        FROM idem WHERE key = $1`, key).Scan(&status, &body)
+	if err != nil {
+		return nil, err
+	}
+	if status != 201 || body == nil {
+		return nil, fmt.Errorf("key finished with %d: %w",
+			status, ledger.ErrBusy)
+	}
+	return body, nil
+}
+
+// ImportBatch posts a batch of transfers in one transaction.
+// Each transfer carries its own idempotency key, which the
+// caller builds from the file and row number. The keys commit
+// with the batch, so they are the import's durable progress
+// record: a restarted job that re-sends a committed batch
+// replays it, moving no money and writing no event twice
+// (Part VI synthesis; TestImportResumesWithoutDuplicates).
+func (s *Store) ImportBatch(ctx context.Context,
+	trs []ledger.Transfer) error {
+	err := s.RunTx(ctx, func(tx pgx.Tx) error {
+		return importTx(ctx, tx, trs)
+	})
+	if err != nil {
+		return translate(ctx, errors.New("import batch"), err)
+	}
+	return nil
+}
+
+func importTx(ctx context.Context, tx pgx.Tx,
+	trs []ledger.Transfer) error {
+	for _, tr := range trs {
+		if tr.Key == "" {
+			return fmt.Errorf("transfer %s: no key: %w",
+				tr.ID, ledger.ErrInvalid)
+		}
+		if _, err := transferTx(ctx, tx, tr); err != nil {
+			return fmt.Errorf("transfer %s: %w", tr.ID, err)
+		}
+	}
+	return nil
 }
 
 // Posted is the response body of a committed transfer, and the

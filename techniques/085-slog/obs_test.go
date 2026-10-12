@@ -3,6 +3,7 @@ package obs
 import (
 	"bytes"
 	"encoding/json"
+	stdlog "log"
 	"log/slog"
 	"strings"
 	"testing"
@@ -54,5 +55,22 @@ func TestBadKey(t *testing.T) {
 	NewLogger(&buf, "v1").Info("odd", args...)
 	if !strings.Contains(buf.String(), "!BADKEY") {
 		t.Fatalf("got %s", &buf)
+	}
+}
+
+// slog.SetDefault routes the old log package through the handler,
+// so a stray log.Printf in a dependency comes out as JSON.
+func TestSetDefaultRoutesLogPackage(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(NewLogger(&buf, "v1"))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	stdlog.Printf("from a dependency")
+	var line map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+		t.Fatalf("not JSON: %q", &buf)
+	}
+	if line["msg"] != "from a dependency" || line["service"] != "ledgerd" {
+		t.Fatalf("line = %v", line)
 	}
 }

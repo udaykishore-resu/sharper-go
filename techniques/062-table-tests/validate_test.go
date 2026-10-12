@@ -27,7 +27,10 @@ func TestValidate(t *testing.T) {
 			tr := ok
 			tc.edit(&tr)
 			err := tr.Validate()
-			if !errors.Is(err, tc.want) {
+			switch {
+			case tc.want == nil && err != nil:
+				t.Errorf("%+v: unexpected %v", tr, err)
+			case !errors.Is(err, tc.want):
 				t.Errorf("%+v.Validate() = %v, want %v",
 					tr, err, tc.want)
 			}

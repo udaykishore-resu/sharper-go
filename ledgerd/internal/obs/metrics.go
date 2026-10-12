@@ -24,7 +24,7 @@ type Metrics struct {
 // registers it; alert when it moves at all.
 var Panics = prometheus.NewCounter(prometheus.CounterOpts{
 	Name: "ledgerd_http_panics_total",
-	Help: "Handler panics turned into 500s.",
+	Help: "Handler panics caught by Recover, 500 or aborted.",
 })
 
 // NewMetrics registers the request metrics plus the Go and

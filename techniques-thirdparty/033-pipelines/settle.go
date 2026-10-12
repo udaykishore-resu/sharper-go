@@ -45,6 +45,12 @@ func validate(ctx context.Context,
 	return nil
 }
 
+// errStop is how the last stage says "enough" without failing:
+// errgroup cancels the other stages as for any error, and run
+// drops it after Wait. Wait keeps the first error, so a real
+// failure that happened before the stop is still returned.
+var errStop = errors.New("settle: consumer stopped early")
+
 // run wires one group, one unbuffered channel per edge and one
 // g.Go per stage. Each edge has exactly one sender.
 func run(ctx context.Context, ts []Transfer,
@@ -62,5 +68,8 @@ func run(ctx context.Context, ts []Transfer,
 		}
 		return nil
 	})
-	return g.Wait()
+	if err := g.Wait(); !errors.Is(err, errStop) {
+		return err
+	}
+	return nil
 }

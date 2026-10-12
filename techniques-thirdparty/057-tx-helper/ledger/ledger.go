@@ -9,4 +9,7 @@ type Transfer struct {
 	Key          string
 }
 
-var ErrFunds = errors.New("ledger: insufficient funds")
+var (
+	ErrFunds = errors.New("ledger: insufficient funds")
+	ErrBusy  = errors.New("ledger: busy, retry")
+)

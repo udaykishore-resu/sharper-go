@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -29,6 +30,11 @@ func parse(b []byte) (*Live, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
 		return nil, err
+	}
+	// Decode stops after one value; a second one, or trailing
+	// junk from a bad merge, rejects the file too.
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("trailing data after the config object")
 	}
 	var errs []error
 	if c.Version == "" {

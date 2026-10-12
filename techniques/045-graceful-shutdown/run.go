@@ -27,6 +27,7 @@ type API struct{}
 func (API) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /readyz", health.Ready)
+	mux.HandleFunc("GET /slow", slow)
 	return mux
 }
 
@@ -36,6 +37,9 @@ var (
 	// The book uses literals; tests shorten these.
 	addr  = ":8080"
 	drain = 5 * time.Second
+	grace = 20 * time.Second
+	// slow stands in for a handler that ignores cancellation.
+	slow = func(http.ResponseWriter, *http.Request) {}
 )
 
 func newServer(h http.Handler) *http.Server {
@@ -59,7 +63,11 @@ func run() error {
 	health.draining.Store(true) // /readyz fails
 	time.Sleep(drain)
 	sctx, cancel := context.WithTimeout(
-		context.Background(), 20*time.Second)
+		context.Background(), grace)
 	defer cancel()
-	return srv.Shutdown(sctx)
+	if err := srv.Shutdown(sctx); err != nil {
+		srv.Close() // deadline passed: cut the stragglers
+		return err
+	}
+	return nil
 }

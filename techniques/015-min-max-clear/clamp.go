@@ -9,8 +9,10 @@ func pageSize(asked int) int {
 	return max(minPage, min(asked, maxPage))
 }
 
+// backoff clamps attempt to 0..6 before the shift: a negative
+// shift count panics, and a large one wraps.
 func backoff(attempt int) time.Duration {
-	d := 100 * time.Millisecond << min(attempt, 6)
+	d := 100 * time.Millisecond << max(0, min(attempt, 6))
 	return min(d, 5*time.Second)
 }
 

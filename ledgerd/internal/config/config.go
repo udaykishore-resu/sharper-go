@@ -91,6 +91,14 @@ func parseKeys(s string) (map[string]string, error) {
 				client))
 			continue
 		}
+		// ledger.ScopedKey joins client and key with "/", so a
+		// client name holding one could share another client's
+		// idempotency keys (Technique 52).
+		if strings.Contains(client, "/") {
+			errs = append(errs, fmt.Errorf(
+				"API_KEYS: client %q must not contain '/'", client))
+			continue
+		}
 		keys[token] = client
 	}
 	return keys, errors.Join(errs...)

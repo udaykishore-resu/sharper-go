@@ -4,10 +4,11 @@ package limit
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
-	"time"
 
 	"golang.org/x/time/rate"
 )
@@ -29,8 +30,15 @@ type perClient struct {
 	burst int
 }
 
-func newPerClient(r rate.Limit, burst int) *perClient {
-	return &perClient{m: map[string]*rate.Limiter{}, r: r, burst: burst}
+// newPerClient refuses settings that build a limiter which can
+// never grant: a burst below 1 (the zero rate.Limiter{} has burst
+// 0) or a rate that is not positive. Such a limiter's Delay is
+// rate.InfDuration, so every request would get 429.
+func newPerClient(r rate.Limit, burst int) (*perClient, error) {
+	if burst < 1 || r <= 0 {
+		return nil, fmt.Errorf("limit: rate %v burst %d never grants", r, burst)
+	}
+	return &perClient{m: map[string]*rate.Limiter{}, r: r, burst: burst}, nil
 }
 
 func (p *perClient) get(tenant string) *rate.Limiter {
@@ -54,7 +62,7 @@ func limit(p *perClient,
 		res := p.get(tenant(r.Context())).Reserve()
 		if d := res.Delay(); d > 0 {
 			res.Cancel()
-			secs := int(d/time.Second) + 1
+			secs := int(math.Ceil(d.Seconds()))
 			w.Header().Set("Retry-After",
 				strconv.Itoa(secs))
 			http.Error(w, "slow down",

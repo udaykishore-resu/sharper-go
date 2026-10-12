@@ -14,6 +14,11 @@ import (
 	"example.com/ledgerd/internal/store"
 )
 
+// flushBudget bounds the trace flush after the servers drain.
+// It is the last term of the shutdown budget that
+// k8s/deployment.yaml must cover (TestGraceBudgetFitsManifest).
+const flushBudget = 5 * time.Second
+
 // run is the startup list, in order: signals, config, logger
 // and tracer, store, then the servers. Defers run bottom to top:
 // servers drain, then the pool closes, then spans flush.
@@ -40,7 +45,7 @@ func run() error {
 		// The signal context is already cancelled here, so the
 		// flush gets its own budget on a fresh context.
 		fctx, cancel := context.WithTimeout(
-			context.WithoutCancel(ctx), 5*time.Second)
+			context.WithoutCancel(ctx), flushBudget)
 		defer cancel()
 		if err := flush(fctx); err != nil {
 			log.Warn("trace flush", "err", err)

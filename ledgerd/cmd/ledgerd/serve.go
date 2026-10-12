@@ -21,10 +21,18 @@ import (
 	"example.com/ledgerd/internal/store"
 )
 
-// drainDelay keeps serving after readiness fails, while the
-// endpoints controller removes the pod (Technique 45). Drain plus
-// SHUTDOWN_GRACE must stay under terminationGracePeriodSeconds.
-var drainDelay = 5 * time.Second
+// drain keeps serving after readiness fails, while the
+// endpoints controller removes the pod (Technique 45). With the
+// preStop sleep, SHUTDOWN_GRACE and flushBudget it must fit in
+// terminationGracePeriodSeconds (TestGraceBudgetFitsManifest).
+// Tests shorten drainDelay; drain is the production value.
+const drain = 5 * time.Second
+
+var drainDelay = drain
+
+// listen binds each server's address. Tests swap it to move the
+// fixed addresses onto free ports.
+var listen = net.Listen
 
 func serve(ctx context.Context, cfg config.Config,
 	log *slog.Logger, st *store.Store) error {
@@ -98,7 +106,7 @@ func runServers(ctx context.Context, grace time.Duration,
 	h *httpapi.Health, srvs ...*http.Server) error {
 	lns := make([]net.Listener, 0, len(srvs))
 	for _, s := range srvs {
-		ln, err := net.Listen("tcp", s.Addr)
+		ln, err := listen("tcp", s.Addr)
 		if err != nil {
 			for _, l := range lns {
 				l.Close()

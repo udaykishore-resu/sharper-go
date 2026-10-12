@@ -117,16 +117,31 @@ type Wrapper interface {
 	Wrap(http.Handler) http.Handler
 }
 
+// Recover is Hack 90's layer. Before the first write it answers
+// 500, which the access log and metrics outside it record. After
+// it, headers are gone: it aborts with http.ErrAbortHandler so a
+// half body can't pass as success. An ErrAbortHandler panic from
+// the handler passes through untouched.
 func Recover(log *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sw := &statusWriter{ResponseWriter: w}
 			defer func() {
-				if v := recover(); v != nil {
-					log.Error("panic", "panic", v)
-					http.Error(w, "internal error", 500)
+				v := recover()
+				if v == nil {
+					return
 				}
+				if v == http.ErrAbortHandler {
+					panic(v)
+				}
+				log.ErrorContext(r.Context(), "panic",
+					"route", r.Pattern, "panic", v)
+				if sw.status != 0 {
+					panic(http.ErrAbortHandler)
+				}
+				http.Error(sw, "internal error", 500)
 			}()
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(sw, r)
 		})
 	}
 }

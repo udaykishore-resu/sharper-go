@@ -21,17 +21,34 @@ func TestBoth(t *testing.T) {
 	}
 }
 
-// With methods on *LimitError, a non-pointer target never matches,
-// and nothing tells you.
-type valueOnly struct{}
-
-func (valueOnly) Error() string { return "value" }
-
-func TestWrongPointerLevel(t *testing.T) {
+// With methods on *LimitError, a LimitError target does not
+// implement error: errors.As panics, and go vet's errorsas check
+// rejects the call at compile time. (The target goes through an
+// any here only to get past vet.)
+func TestValueTargetPanics(t *testing.T) {
 	err := fmt.Errorf("x: %w", &LimitError{})
-	var wrong valueOnly
-	if errors.As(err, &wrong) {
-		t.Fatal("matched the wrong type")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("errors.As accepted a LimitError target")
+		}
+	}()
+	var le LimitError
+	var target any = &le
+	errors.As(err, target)
+}
+
+// valueLimit has a value receiver, so a valueLimit target compiles,
+// but it never matches the *valueLimit that was returned, and
+// nothing tells you.
+type valueLimit struct{}
+
+func (valueLimit) Error() string { return "limit" }
+
+func TestValueReceiverNeverMatchesPointer(t *testing.T) {
+	err := fmt.Errorf("x: %w", &valueLimit{})
+	var v valueLimit
+	if errors.As(err, &v) {
+		t.Fatal("a valueLimit target matched a *valueLimit")
 	}
 	if _, ok := errors.AsType[*LimitError](fmt.Errorf("x: %w", ErrFrozen)); ok {
 		t.Fatal("a sentinel is not a *LimitError")

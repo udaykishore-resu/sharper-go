@@ -11,7 +11,11 @@ import (
 
 // The Try it: 2 per second with burst 4, hit 10 times.
 func TestBurstThen429(t *testing.T) {
-	h := limit(newPerClient(2, 4), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	p, err := newPerClient(2, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := limit(p, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	ok, limited := 0, 0
 	for range 10 {
 		rec := httptest.NewRecorder()

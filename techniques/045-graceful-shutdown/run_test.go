@@ -1,6 +1,8 @@
 package shutdown
 
 import (
+	"context"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -30,6 +32,7 @@ func status(url string) int {
 
 func TestDrainThenShutdown(t *testing.T) {
 	addr, drain = freeAddr(t), 300*time.Millisecond
+	health.draining.Store(false)
 	url := "http://" + addr + "/readyz"
 	done := make(chan error, 1)
 	go func() { done <- run() }()
@@ -71,5 +74,58 @@ func TestBindFailureReturns(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("run waited for a signal on a taken port")
+	}
+}
+
+// Shutdown alone waits; when its deadline passes it returns an
+// error and leaves the straggler running. run then calls Close,
+// which cuts the client's connection. The handler itself is not
+// stopped: only its own context checks can do that.
+func TestShutdownDeadlineThenClose(t *testing.T) {
+	addr, drain, grace = freeAddr(t), 50*time.Millisecond, 200*time.Millisecond
+	health.draining.Store(false)
+	defer func() { grace = 20 * time.Second }()
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	slow = func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-release // ignores r.Context()
+	}
+	defer func() { slow = func(http.ResponseWriter, *http.Request) {} }()
+	defer close(release)
+	done := make(chan error, 1)
+	go func() { done <- run() }()
+	for i := 0; status("http://"+addr+"/readyz") != 200; i++ {
+		if i > 200 {
+			t.Fatal("server never came up")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	clientErr := make(chan error, 1)
+	go func() {
+		resp, err := http.Get("http://" + addr + "/slow")
+		if err == nil {
+			resp.Body.Close()
+		}
+		clientErr <- err
+	}()
+	<-entered
+	start := time.Now()
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("run = %v, want DeadlineExceeded", err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("shutdown took %v", d)
+	}
+	select {
+	case err := <-clientErr:
+		if err == nil {
+			t.Fatal("straggler got a response after Close")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not cut the straggler's connection")
 	}
 }

@@ -36,12 +36,22 @@ func TestListerReadsScopedCache(t *testing.T) {
 			t.Fatal("transform did not drop managed fields")
 		}
 	}
-	// Reads come from memory: no new LIST reaches the server.
-	before := len(cs.Actions())
+	// Reads come from memory: no new LIST or GET reaches the
+	// server. (The informer's own WATCH may start after the sync
+	// returns, so it is not counted.)
+	reads := func() (n int) {
+		for _, a := range cs.Actions() {
+			if v := a.GetVerb(); v == "list" || v == "get" {
+				n++
+			}
+		}
+		return n
+	}
+	before := reads()
 	for range 100 {
 		lister.Pods("ledgerd").List(labels.Everything())
 	}
-	if len(cs.Actions()) != before {
+	if reads() != before {
 		t.Fatal("lister reads hit the API server")
 	}
 }

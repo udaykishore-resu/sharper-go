@@ -12,9 +12,12 @@ import (
 // panics is the counter from Technique 88's registry.
 var panics = obs.Panics
 
-// Recover turns a panic into one 500, one JSON log line and one
-// metric (Technique 90). It sits inside metrics, so the 500 is
-// counted.
+// Recover turns a panic into one JSON log line and one count on
+// obs.Panics (Technique 90). Before the first write it answers
+// 500, which the access log and metrics outside it record. After
+// the first write it aborts with http.ErrAbortHandler, so only
+// the panic counter sees that request. An ErrAbortHandler panic
+// from the handler passes through untouched.
 func Recover(log *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
