@@ -37,7 +37,7 @@ var errTrailing = errors.New("trailing data after JSON value")
 func expectEOF(dec *json.Decoder) error {
 	_, err := dec.Token()
 	switch {
-	case err == io.EOF:
+	case errors.Is(err, io.EOF):
 		return nil
 	case err == nil:
 		return errTrailing
@@ -48,5 +48,5 @@ func expectEOF(dec *json.Decoder) error {
 
 func encodeJSON(w io.Writer, v any) {
 	enc := json.NewEncoder(w)
-	enc.Encode(v)
+	_ = enc.Encode(v) // the status line is already sent
 }

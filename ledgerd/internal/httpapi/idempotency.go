@@ -93,7 +93,7 @@ func (a *API) idem(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", contentType(saved.Body))
 			w.Header().Set("Idempotent-Replayed", "true")
 			w.WriteHeader(saved.Status)
-			w.Write(saved.Body)
+			_, _ = w.Write(saved.Body) //nolint:gosec // G705: replays our own stored JSON
 		}
 		if err != nil || saved != nil {
 			return

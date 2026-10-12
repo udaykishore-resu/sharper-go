@@ -38,7 +38,7 @@ func (h *Health) Drain() { h.draining.Store(true) }
 // Live never checks the database: a database blip must not
 // restart every pod at once.
 func (h *Health) Live(w http.ResponseWriter, _ *http.Request) {
-	w.Write([]byte("ok\n"))
+	_, _ = w.Write([]byte("ok\n"))
 }
 
 func (h *Health) Ready(w http.ResponseWriter,
@@ -54,13 +54,13 @@ func (h *Health) Ready(w http.ResponseWriter,
 		http.Error(w, "db: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	w.Write([]byte("ready\n"))
+	_, _ = w.Write([]byte("ready\n"))
 }
 
 // Version serves the build info, built once (Technique 6).
 func (h *Health) Version(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(h.version())
+	_, _ = w.Write(h.version())
 }
 
 // Mux serves the probes and /version itself and sends

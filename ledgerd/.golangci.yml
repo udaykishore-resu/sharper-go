@@ -12,5 +12,8 @@ linters:
   exclusions:
     generated: strict
     presets: [std-error-handling]
+    rules:
+      - path: _test\.go
+        linters: [errcheck, gosec, noctx]
 formatters:
   enable: [gofmt, goimports]

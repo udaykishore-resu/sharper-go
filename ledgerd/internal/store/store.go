@@ -53,10 +53,12 @@ func Open(ctx context.Context, dsn string, opts ...Option) (*Store, error) {
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
+		//nolint:errorlint // keep the driver out of the chain (Technique 21)
 		return nil, fmt.Errorf("store: %v", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
+		//nolint:errorlint // keep the driver out of the chain (Technique 21)
 		return nil, fmt.Errorf("store: ping: %v", err)
 	}
 	return &Store{pool: pool}, nil
@@ -129,22 +131,23 @@ func (s *Store) Entries(ctx context.Context, id string,
 // ctx.Err() first, so a timeout maps to 503, not 500.
 func translate(ctx context.Context, op error, err error) error {
 	if cerr := ctx.Err(); cerr != nil {
-		return fmt.Errorf("%v: %w", op, cerr)
+		return fmt.Errorf("%s: %w", op.Error(), cerr)
 	}
 	for _, sentinel := range domainErrors {
 		if errors.Is(err, sentinel) {
-			return fmt.Errorf("%v: %w", op, err)
+			return fmt.Errorf("%s: %w", op.Error(), err)
 		}
 	}
 	if retryable(err) {
-		return fmt.Errorf("%v: %w", op, ledger.ErrBusy)
+		return fmt.Errorf("%s: %w", op.Error(), ledger.ErrBusy)
 	}
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && pe.Code == "23505" &&
 		pe.ConstraintName == "transfers_pkey" {
-		return fmt.Errorf("%v: %w", op, ledger.ErrDuplicate)
+		return fmt.Errorf("%s: %w", op.Error(), ledger.ErrDuplicate)
 	}
-	return fmt.Errorf("%v: %v", op, err)
+	// %v, not %w: the driver error is logged, never matched.
+	return fmt.Errorf("%s: %s", op.Error(), err.Error())
 }
 
 var domainErrors = []error{

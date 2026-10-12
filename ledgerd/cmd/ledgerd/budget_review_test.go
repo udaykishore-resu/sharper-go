@@ -58,7 +58,7 @@ func TestGraceBudgetFitsManifest(t *testing.T) {
 	if def.ReqTimeout >= def.Grace {
 		t.Errorf("REQUEST_TIMEOUT %v >= SHUTDOWN_GRACE %v", def.ReqTimeout, def.Grace)
 	}
-	if !(def.ReqTimeout < httpapi.ClaimBudget && httpapi.ClaimBudget < store.Lease) {
+	if def.ReqTimeout >= httpapi.ClaimBudget || httpapi.ClaimBudget >= store.Lease {
 		t.Errorf("want request %v < claim %v < lease %v",
 			def.ReqTimeout, httpapi.ClaimBudget, store.Lease)
 	}

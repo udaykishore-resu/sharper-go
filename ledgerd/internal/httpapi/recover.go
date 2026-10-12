@@ -27,6 +27,7 @@ func Recover(log *slog.Logger) Middleware {
 				if v == nil {
 					return
 				}
+				//nolint:errorlint // net/http compares with == too
 				if v == http.ErrAbortHandler {
 					panic(v)
 				}

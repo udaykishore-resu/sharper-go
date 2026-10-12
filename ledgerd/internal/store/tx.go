@@ -66,7 +66,7 @@ func (s *Store) RunTx(ctx context.Context,
 		select {
 		case <-ctx.Done():
 			return errors.Join(err, context.Cause(ctx))
-		case <-time.After(rand.N(d)):
+		case <-time.After(rand.N(d)): //nolint:gosec // jitter, not a secret
 		}
 	}
 	return err

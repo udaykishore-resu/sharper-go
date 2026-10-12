@@ -27,7 +27,7 @@ func TestRecoverPassesErrAbortHandler(t *testing.T) {
 			panic(http.ErrAbortHandler)
 		}))
 	defer func() {
-		if v := recover(); v != http.ErrAbortHandler {
+		if v := recover(); v != any(http.ErrAbortHandler) {
 			t.Fatalf("recovered %v, want ErrAbortHandler", v)
 		}
 		if buf.Len() != 0 || testutil.ToFloat64(obs.Panics) != before {

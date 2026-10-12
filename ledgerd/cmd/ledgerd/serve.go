@@ -109,7 +109,7 @@ func runServers(ctx context.Context, grace time.Duration,
 		ln, err := listen("tcp", s.Addr)
 		if err != nil {
 			for _, l := range lns {
-				l.Close()
+				_ = l.Close()
 			}
 			return fmt.Errorf("listen %s: %w", s.Addr, err)
 		}
@@ -123,8 +123,8 @@ func runServers(ctx context.Context, grace time.Duration,
 	slog.InfoContext(ctx, "serving", "addrs", addrs(lns))
 	select {
 	case err := <-errc:
-		shutdown(context.WithoutCancel(ctx), grace, srvs)
-		return err // failed to serve
+		return errors.Join(err, // failed to serve
+			shutdown(context.WithoutCancel(ctx), grace, srvs))
 	case <-ctx.Done():
 	}
 	slog.InfoContext(ctx, "shutting down", "cause", context.Cause(ctx))
@@ -147,7 +147,7 @@ func shutdown(ctx context.Context, grace time.Duration,
 	for _, s := range srvs {
 		wg.Go(func() {
 			if err := s.Shutdown(sctx); err != nil {
-				s.Close()
+				_ = s.Close()
 				mu.Lock()
 				errs = append(errs, fmt.Errorf("shutdown %s: %w", s.Addr, err))
 				mu.Unlock()

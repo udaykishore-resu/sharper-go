@@ -98,7 +98,7 @@ func (a *API) createTransfer(w http.ResponseWriter, r *http.Request) {
 	a.log.InfoContext(r.Context(), "transfer posted", "transfer", tr)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	w.Write(resp)
+	_, _ = w.Write(resp)
 }
 
 type accountOut struct {
@@ -158,5 +158,5 @@ func (a *API) listEntries(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v) // headers are already sent
 }
