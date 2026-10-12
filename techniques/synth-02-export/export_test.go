@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/udaykishore-resu/sharper-go/techniques/013-iterators"
+	accounts "github.com/udaykishore-resu/sharper-go/techniques/013-iterators"
 )
 
 // pager serves n accounts with zero balances and fails on call

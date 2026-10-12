@@ -1,0 +1,56 @@
+# The book's lint baseline (Technique 10): golangci-lint with
+# ledgerd's .golangci.yml, plus staticcheck on every module.
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golangci-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ledgerd/go.mod
+          cache-dependency-path: ledgerd/go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          # Build the linter with the Go above, so it understands
+          # the toolchain the module uses.
+          install-mode: goinstall
+          working-directory: ledgerd
+      - name: formatting report (golangci-lint fmt)
+        working-directory: ledgerd
+        run: golangci-lint fmt --diff ./...
+
+  staticcheck:
+    name: staticcheck (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [techniques, techniques-thirdparty, ledgerd]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.mod
+      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 -tags integration ./...

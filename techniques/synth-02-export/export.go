@@ -13,7 +13,7 @@ import (
 	"io"
 	"iter"
 
-	"github.com/udaykishore-resu/sharper-go/techniques/013-iterators"
+	accounts "github.com/udaykishore-resu/sharper-go/techniques/013-iterators"
 )
 
 // Line has no omitzero: a zero balance is data.

@@ -1,0 +1,85 @@
+# Builds ledgerd's image for both architectures (Techniques 92 and 93),
+# runs it against Postgres, checks SIGTERM drains cleanly, scans the
+# image and validates the Kubernetes manifests. Nothing is pushed.
+name: image
+
+on:
+  push:
+    branches: [main]
+    paths: ["ledgerd/**", ".github/workflows/image.yml"]
+  pull_request:
+    paths: ["ledgerd/**", ".github/workflows/image.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: ledgerd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: ledgerd
+    steps:
+      - uses: actions/checkout@v5
+      - name: buildx builder with arm64 emulation
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
+          docker buildx create --use --name ledgerd-ci
+      - name: build linux/amd64 and linux/arm64
+        # No --secret: the public build needs no private modules.
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            --build-arg VERSION=${GITHUB_SHA::12} .
+      - name: load the amd64 image
+        run: |
+          docker buildx build --platform linux/amd64 --load \
+            --build-arg VERSION=${GITHUB_SHA::12} -t ledgerd:ci .
+      - name: migrate, serve, then drain on SIGTERM
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/ledgerd?sslmode=disable
+        run: |
+          docker run --rm --network host -e DATABASE_URL ledgerd:ci migrate
+          docker run -d --name ledgerd --network host -e DATABASE_URL ledgerd:ci
+          for i in $(seq 1 30); do
+            curl -fsS localhost:8080/readyz && break
+            sleep 1
+          done
+          curl -fsS localhost:8080/readyz
+          docker stop -t 40 ledgerd
+          code=$(docker inspect -f '{{.State.ExitCode}}' ledgerd)
+          docker logs ledgerd | tail -5
+          echo "exit code: $code"
+          test "$code" = 0
+      - name: scan the image's OS packages
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ledgerd:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  manifests:
+    name: kubernetes manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ledgerd/go.mod
+          cache: false
+      - run: >-
+          go run github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+          -strict -summary -kubernetes-version 1.33.0 ledgerd/k8s

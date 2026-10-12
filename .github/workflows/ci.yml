@@ -1,0 +1,132 @@
+# Tests for all three modules on the oldest and newest supported Go.
+# Mirrors ledgerd's Makefile (Technique 7, 10 and 42 in the book).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.module }}, go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.26.x", "1.27.x"]
+        module: [techniques, techniques-thirdparty, ledgerd]
+    env:
+      # Use the Go the matrix installed; the toolchain line in go.mod
+      # would otherwise upgrade the 1.26 job to 1.27.2.
+      GOTOOLCHAIN: local
+      CGO_ENABLED: "1"
+      GORACE: halt_on_error=1
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: ledgerd_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: ${{ matrix.module }}/go.mod
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
+      - name: vet (default and integration tags)
+        run: go vet ./... && go vet -tags integration ./...
+      - name: unit tests with the race detector
+        run: go test -race -shuffle=on -count=1 ./...
+      - name: integration tests against Postgres 16
+        run: go test -race -count=1 -p 1 -tags integration ./...
+        env:
+          LEDGERD_TEST_DATABASE_URL: postgres://postgres@localhost:5432/ledgerd_test?sslmode=disable
+          PGTEST_DATABASE_URL: postgres://postgres@localhost:5432/ledgerd_test?sslmode=disable
+
+  testcontainers:
+    # Same integration tests, but with no database URL set, so the
+    # testcontainers path (Technique 68) starts its own Postgres.
+    name: testcontainers path
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ledgerd/go.mod
+          cache-dependency-path: |
+            ledgerd/go.sum
+            techniques-thirdparty/go.sum
+      - name: ledgerd store
+        working-directory: ledgerd
+        run: go test -count=1 -tags integration ./internal/store/...
+      - name: techniques-thirdparty
+        working-directory: techniques-thirdparty
+        run: go test -count=1 -p 1 -tags integration ./...
+
+  modules:
+    name: go.mod, go.sum and toolchain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ledgerd/go.mod
+          cache: false
+      - name: go mod tidy leaves no diff
+        run: |
+          for m in techniques techniques-thirdparty ledgerd; do
+            (cd "$m" && go mod tidy -diff) || { echo "run: cd $m && go mod tidy"; exit 1; }
+          done
+      - name: builder image matches the toolchain line (Technique 1)
+        working-directory: ledgerd
+        run: |
+          want=$(awk '/^toolchain/ { sub("go", "", $2); print $2 }' go.mod)
+          got=$(sed -n 's/^FROM .*golang:\([0-9][0-9.]*\).*/\1/p' Dockerfile)
+          echo "go.mod toolchain: $want, Dockerfile builder: $got"
+          test -n "$want" && test "$want" = "$got"
+
+  codegen:
+    name: generated code is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ledgerd/go.mod
+          cache-dependency-path: |
+            ledgerd/go.sum
+            techniques-thirdparty/go.sum
+      - name: go generate (Technique 8)
+        working-directory: techniques-thirdparty
+        run: |
+          go generate ./...
+          git diff --exit-code
+          untracked=$(git ls-files --others --exclude-standard)
+          if [ -n "$untracked" ]; then echo "$untracked"; exit 1; fi
+      - name: sqlc diff (Technique 56)
+        working-directory: ledgerd
+        run: go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 diff

@@ -109,7 +109,7 @@ func TestCoverScript(t *testing.T) {
 // runBinary starts the -cover binary, waits until it serves, sends
 // sig and returns its exit error and stderr.
 func runBinary(t *testing.T, bin string, sig syscall.Signal,
-	extra ...string) (error, string) {
+	extra ...string) (string, error) {
 	t.Helper()
 	addr := freeAddr(t)
 	cmd := exec.Command(bin)
@@ -135,7 +135,7 @@ func runBinary(t *testing.T, bin string, sig syscall.Signal,
 	}
 	cmd.Process.Signal(sig)
 	err := cmd.Wait()
-	return err, stderr.String()
+	return stderr.String(), err
 }
 
 func counters(t *testing.T, dir string) int {
@@ -158,7 +158,7 @@ func TestCoverFlushNeedsCleanExit(t *testing.T) {
 
 	t.Run("SIGTERM handled: counters written", func(t *testing.T) {
 		cov := t.TempDir()
-		if err, _ := runBinary(t, bin, syscall.SIGTERM, "GOCOVERDIR="+cov); err != nil {
+		if _, err := runBinary(t, bin, syscall.SIGTERM, "GOCOVERDIR="+cov); err != nil {
 			t.Fatalf("exit: %v", err)
 		}
 		if counters(t, cov) == 0 {
@@ -167,7 +167,7 @@ func TestCoverFlushNeedsCleanExit(t *testing.T) {
 	})
 	t.Run("SIGTERM not handled: nothing written", func(t *testing.T) {
 		cov := t.TempDir()
-		err, _ := runBinary(t, bin, syscall.SIGTERM,
+		_, err := runBinary(t, bin, syscall.SIGTERM,
 			"GOCOVERDIR="+cov, "SVC_NO_SIGNALS=1")
 		if err == nil {
 			t.Fatal("process exited cleanly without a handler")
@@ -184,7 +184,7 @@ func TestCoverFlushNeedsCleanExit(t *testing.T) {
 		}
 	})
 	t.Run("GOCOVERDIR unset: warning only", func(t *testing.T) {
-		err, stderr := runBinary(t, bin, syscall.SIGTERM)
+		stderr, err := runBinary(t, bin, syscall.SIGTERM)
 		if err != nil {
 			t.Fatalf("exit: %v", err)
 		}

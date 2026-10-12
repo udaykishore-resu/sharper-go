@@ -54,7 +54,7 @@ func newAPIServer(t *testing.T, notReady string) *apiServer {
 			json.NewEncoder(w).Encode(list)
 		case strings.HasSuffix(r.URL.Path, "/proxy/readyz"):
 			if a.notReady != "" && strings.Contains(r.URL.Path, a.notReady) {
-				http.Error(w, "draining", 503)
+				http.Error(w, "draining", http.StatusServiceUnavailable)
 				return
 			}
 			io.WriteString(w, "ok")

@@ -13,4 +13,4 @@ linters:
     generated: strict
     presets: [std-error-handling]
 formatters:
-  enable: [gofumpt, goimports]
+  enable: [gofmt, goimports]
