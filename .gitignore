@@ -1,0 +1,10 @@
+# Workspaces are scratch setups, never committed (Technique 3).
+go.work
+go.work.sum
+bin/
+cov/
+*.test
+*.out
+*.pprof
+*.trace
+.env

@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledgerd
+  labels: {app: ledgerd}
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: ledgerd}
+  template:
+    metadata:
+      labels: {app: ledgerd}
+    spec:
+      # Budget (Techniques 45 and 101): preStop 5s + in-process
+      # drain 5s + SHUTDOWN_GRACE 20s = 30s, under 40s.
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: ledgerd
+          image: registry.example.com/ledgerd:v1.4.2
+          args: ["serve"]
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: metrics, containerPort: 9090}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: ledgerd, key: database-url}
+            - name: API_KEYS
+              valueFrom:
+                secretKeyRef: {name: ledgerd, key: api-keys}
+            - name: SHUTDOWN_GRACE
+              value: "20s"
+            # About 90% of the memory limit (Technique 79).
+            # GOMAXPROCS stays unset: Go 1.25+ follows the CPU
+            # limit and updates it live (Technique 80).
+            - name: GOMEMLIMIT
+              value: "460MiB"
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_traceidratio
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "0.05"
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "2", memory: 512Mi}
+          # Liveness never checks the database (Technique 49).
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          # Every two seconds, so the drain's 503 is seen.
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 2
+            failureThreshold: 2
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 1
+            failureThreshold: 30
+          lifecycle:
+            # Give endpoint removal a head start before SIGTERM.
+            # Native sleep: distroless has no shell.
+            preStop:
+              sleep: {seconds: 5}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}

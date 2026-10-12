@@ -1,0 +1,9 @@
+/bin/
+/cov/
+*.out
+*.pprof
+*.trace
+*.test
+go.work
+go.work.sum
+.env

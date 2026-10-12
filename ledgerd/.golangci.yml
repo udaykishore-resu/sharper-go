@@ -1,0 +1,16 @@
+# Technique 10: the baseline, in golangci-lint's version 2 format.
+version: "2"
+run:
+  build-tags: [integration]
+linters:
+  default: standard
+  enable: [bodyclose, errorlint, gosec, noctx, nolintlint]
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    generated: strict
+    presets: [std-error-handling]
+formatters:
+  enable: [gofumpt, goimports]

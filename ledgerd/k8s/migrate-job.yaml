@@ -1,0 +1,21 @@
+# Appendix C.5: one Job per release, from the same image. The
+# rollout waits for it; only this Job's role needs DDL rights.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ledgerd-migrate-v1-4-2
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: migrate
+          image: registry.example.com/ledgerd:v1.4.2
+          args: ["migrate"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: ledgerd-migrate, key: database-url}

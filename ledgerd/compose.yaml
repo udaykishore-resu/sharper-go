@@ -1,0 +1,44 @@
+# Local ledgerd: Postgres, a one-shot migration, a demo seed and
+# the API. `docker compose up --build`, then see the README.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ledgerd
+      POSTGRES_PASSWORD: ledgerd
+      POSTGRES_DB: ledgerd
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledgerd -d ledgerd"]
+      interval: 2s
+      retries: 30
+
+  # Same image, run once per deploy, as the Kubernetes Job does.
+  migrate:
+    build: .
+    command: ["migrate"]
+    environment: &env
+      DATABASE_URL: postgres://ledgerd:ledgerd@db:5432/ledgerd?sslmode=disable
+      API_KEYS: demo:dev-token-0123456789
+      LOG_LEVEL: info
+    depends_on:
+      db: {condition: service_healthy}
+
+  # Two demo accounts; the house account comes from a migration.
+  seed:
+    image: postgres:17-alpine
+    command: >
+      psql postgres://ledgerd:ledgerd@db:5432/ledgerd -c
+      "INSERT INTO accounts (id) VALUES ('acc_1'), ('acc_2')
+       ON CONFLICT DO NOTHING"
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+  ledgerd:
+    build: .
+    environment: *env
+    ports:
+      - "8080:8080" # API and probes
+      - "9090:9090" # Prometheus metrics
+    depends_on:
+      seed: {condition: service_completed_successfully}

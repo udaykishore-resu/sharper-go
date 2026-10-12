@@ -1,0 +1,2 @@
+# Keep exact bytes: crlf_lines.csv must stay CRLF (Technique 69).
+*.csv -text
