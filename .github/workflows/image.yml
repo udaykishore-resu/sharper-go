@@ -32,7 +32,7 @@ jobs:
       run:
         working-directory: ledgerd
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: buildx builder with arm64 emulation
         run: |
           docker run --privileged --rm tonistiigi/binfmt --install arm64
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: ledgerd/go.mod
