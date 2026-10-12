@@ -69,11 +69,13 @@ func build(t *testing.T, goLine string, debug ...string) string {
 	return exe
 }
 
-// run starts exe, pins it to CPU 0 after the first reading, and
-// returns the first and last GOMAXPROCS it printed within 3s.
+// run starts exe on CPUs 0 and 1, pins it to CPU 0 after the first
+// reading, and returns the first and last GOMAXPROCS it printed
+// within 3s. Starting on exactly two CPUs makes the first reading
+// the same on a 2-CPU laptop and a 4-CPU CI runner.
 func run(t *testing.T, exe string, env ...string) (first, last string) {
 	t.Helper()
-	cmd := exec.Command(exe)
+	cmd := exec.Command("taskset", "-c", "0,1", exe)
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -103,7 +105,7 @@ func TestUpdateFollowsAffinity(t *testing.T) {
 	if _, err := exec.LookPath("taskset"); err != nil {
 		t.Skip("no taskset")
 	}
-	want2 := fmt.Sprint(min(runtime.NumCPU(), 2))
+	want2 := "2" // run starts every probe on CPUs 0 and 1
 	modern := build(t, "1.25")
 	old := build(t, "1.24")
 	optIn := build(t, "1.24", "containermaxprocs=1", "updatemaxprocs=1")

@@ -1,0 +1,52 @@
+# govulncheck on pull requests, nightly and on the release binary
+# (Technique 4). It sees Go code only; the image job scans the OS layer.
+name: vuln
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: govulncheck (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [techniques, techniques-thirdparty, ledgerd]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.mod
+      # Same version as the tool directive in ledgerd/go.mod.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -tags integration ./...
+
+  binary:
+    name: govulncheck (ledgerd binary)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ledgerd
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ledgerd/go.mod
+          cache-dependency-path: ledgerd/go.sum
+      - run: make build
+      - run: go tool govulncheck -mode binary ./bin/ledgerd

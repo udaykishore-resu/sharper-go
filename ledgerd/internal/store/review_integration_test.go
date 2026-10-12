@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,10 +36,14 @@ func freshStore(t *testing.T, migrate bool) *Store {
 	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
 		t.Fatal(err)
 	}
-	cfg := admin.Config()
-	url := fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=disable",
-		cfg.User, cfg.Host, cfg.Port, name)
-	st, err := Open(ctx, url, WithMaxConns(8))
+	// Same server and credentials as dsn, other database. Copying
+	// dsn keeps the password a testcontainers server requires.
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + name
+	st, err := Open(ctx, u.String(), WithMaxConns(8))
 	if err != nil {
 		t.Fatal(err)
 	}
