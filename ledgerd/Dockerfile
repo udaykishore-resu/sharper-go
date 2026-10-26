@@ -2,7 +2,7 @@
 # built natively for each architecture (Techniques 92 and 93).
 # The builder tag copies go.mod's toolchain line, because the
 # official image sets GOTOOLCHAIN=local and never switches.
-FROM --platform=$BUILDPLATFORM golang:1.27.2 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
 ARG TARGETOS TARGETARCH VERSION=dev
 ENV GOPRIVATE=git.corp.example.com/*
 WORKDIR /src
